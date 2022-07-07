@@ -1,0 +1,10 @@
+{
+    'FILES':['Dijet.h5'],
+    'SHAPE':[-1,9000,11],
+    'BATCH':8,
+    'LR':4e-4,
+    'MAXEPOCH':150,
+    'EARLYSTOP':50,
+    'NSWD':11,
+    'CHECKPOINT_NAME':'SWDPU_NSWD11'
+}
