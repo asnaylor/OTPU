@@ -1,10 +1,12 @@
 {
-    'FILES':['Dijet.h5'],
+    'FILES':['DiJet_raw.h5'],
     'SHAPE':[-1,9000,11],
-    'BATCH':8,
-    'LR':4e-4,
-    'MAXEPOCH':150,
+    'BATCH':7,
+    'LR':1e-3,
+    'MAXEPOCH':350,
     'EARLYSTOP':50,
-    'NSWD':11,
-    'CHECKPOINT_NAME':'SWDPU_NSWD11'
+    'NSWD':3,
+    'NPART':9000,
+    'PREPFILE':'preprocessing_raw.json',
+    'CHECKPOINT_NAME':'SWDPU_NSWD3_norm_raw_ht'
 }
