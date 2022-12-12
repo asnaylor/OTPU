@@ -4,10 +4,13 @@ Official repository of the paper [Optimal transport for a global event descripti
 
 # Dependencies
 
-Tensorflow 2.6
-Horovod (Can be ignored for inference by commenting the import statements)
-fastjet
-uproot3
+* Tensorflow 2.6
+
+* Horovod (Can be ignored for inference by commenting the import statements)
+
+* fastjet
+
+* uproot3
 
 # Preprocessing of root files
 
