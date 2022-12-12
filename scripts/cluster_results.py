@@ -10,7 +10,74 @@ from ABCNet import ABCNet, SWD
 import fastjet
 import awkward as ak
 import itertools
+import matplotlib.pyplot as plt
 
+
+def SaveH5(weights,pu_part,nopu_part):
+    with h5.File(os.path.join(flags.data_folder,"Small_{}.h5".format(dataset)),"w") as h5f:
+        dset = h5f.create_dataset('ABCNet', data=weights)
+        dset = h5f.create_dataset('pu', data=pu_part)
+        dset = h5f.create_dataset('no_pu', data=nopu_part)
+        
+    input("Saved")
+
+def Plot2D(weights,pu,gen,checkpoint,name=''):
+    utils.SetStyle()
+    eta_binning = np.linspace(-4,4,25)
+    phi_binning = np.linspace(-3.1,3.1,25)
+    #pu = pu_part*weights
+    plot_folder = os.path.join("..","plots_{}".format(checkpoint))
+    etaphi_frac = np.zeros((eta_binning.shape[0]-1,phi_binning.shape[0]-1))
+    etaphi_frac_n = np.zeros((eta_binning.shape[0]-1,phi_binning.shape[0]-1))
+    etaphi_frac_c = np.zeros((eta_binning.shape[0]-1,phi_binning.shape[0]-1))
+
+    eta_x = 0.5*(eta_binning[:-1] + eta_binning[1:])
+    phi_x = 0.5*(phi_binning[:-1] + phi_binning[1:])
+
+
+    etaphi_frac, xedges, yedges = np.histogram2d(pu[:,:,0].flatten(), pu[:,:,1].flatten(),
+                                                 weights=(weights*pu[:,:,3]).flatten(), bins=(eta_binning, phi_binning))
+    gen_frac,_,_ = np.histogram2d(gen[:,:,0].flatten(), gen[:,:,1].flatten(), weights=gen[:,:,3].flatten(),bins=(eta_binning, phi_binning))
+    etaphi_frac/=gen_frac
+    
+    etaphi_frac_n, xedges, yedges = np.histogram2d(pu[:,:,0].flatten(), pu[:,:,1].flatten(),
+                                                 weights=(weights*pu[:,:,3]*(pu[:,:,-2]==0)).flatten(), bins=(eta_binning, phi_binning))
+    gen_frac,_,_ = np.histogram2d(gen[:,:,0].flatten(), gen[:,:,1].flatten(), weights=(gen[:,:,3]*(gen[:,:,-2]==0)).flatten(),bins=(eta_binning, phi_binning))
+    etaphi_frac_n/=gen_frac
+    
+    etaphi_frac_c, xedges, yedges = np.histogram2d(pu[:,:,0].flatten(), pu[:,:,1].flatten(),
+                                                 weights=(weights*pu[:,:,3]*(pu[:,:,-2]!=0)).flatten(), bins=(eta_binning, phi_binning))
+    gen_frac,_,_ = np.histogram2d(gen[:,:,0].flatten(), gen[:,:,1].flatten(), weights=(gen[:,:,3]*(gen[:,:,-2]!=0)).flatten(),bins=(eta_binning, phi_binning))
+    etaphi_frac_c/=gen_frac
+
+
+
+    feed_dict = {
+        '{}'.format(name):etaphi_frac,
+        'Charged_{}'.format(name):etaphi_frac_c,
+        'Neutral_{}'.format(name):etaphi_frac_n,
+        }
+
+    name_translate={
+        '{}'.format(name):name.split("_")[0],
+        'Charged_{}'.format(name):'TOTAL',
+        'Neutral_{}'.format(name):'TOTAL',
+        }
+
+    
+    for sample in feed_dict:
+        cmap = plt.get_cmap('RdBu')
+        fig,gs = utils.SetGrid(False,figsize=(8,10))
+        ax = plt.subplot(gs[0])
+        
+        im = ax.pcolormesh(phi_x, eta_x, feed_dict[sample], cmap=cmap,vmin=0.04,vmax=2.0)
+        fig.colorbar(im, ax=ax,label=r'$E_{reco} / E_{0 PU}$')
+        bar = ax.set_title(name_translate[sample])
+        #ax.set_xscale('log')
+        ax.set_ylabel(r'$\eta$',fontsize=20)
+        ax.set_xlabel(r'$\phi$',fontsize=20)
+        fig.savefig('{}/efrac_2D_{}.pdf'.format(plot_folder,sample))
+    print("done")
 
 def GetMET(parts):
     '''
@@ -32,36 +99,53 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
         
-    parser.add_argument('--data_folder', default='/pscratch/sd/v/vmikuni/PU', help='Folder containing data and MC files')
+    parser.add_argument('--data_folder', default='/pscratch/sd/v/vmikuni/PU/vertex_info', help='Folder containing data and MC files')
+    #parser.add_argument('--data_folder', default='/global/cscratch1/sd/vmikuni/PU/vertex_info', help='Folder containing data and MC files')
+    #parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/SCRATCH/PU/PU/vertex_info', help='Folder containing data and MC files')
+    parser.add_argument('--dataset', default=None, help='dataset to load')
+    parser.add_argument('--model', default=None, help='model checkpoint to load')
     parser.add_argument('--nevts', type=int,default=-1, help='Number of events to load')
     parser.add_argument('--config', default='config.json', help='Config file with training parameters')
     
     flags = parser.parse_args()
     dataset_config = utils.LoadJson(flags.config)
     preprocessing = utils.LoadJson(dataset_config['PREPFILE'])
-    
-    dataset = dataset_config['FILES'][0]
+
+    if flags.dataset is None:
+        dataset = dataset_config['FILES'][0]
+    else:
+        dataset = flags.dataset
     NPART=dataset_config['NPART']
-    checkpoint_folder = '../checkpoints_{}'.format(dataset_config['CHECKPOINT_NAME'])
+
+
+    
+    if flags.model is None:
+        checkpoint = dataset_config['CHECKPOINT_NAME']
+    else:
+        checkpoint = flags.model
+
+
+    checkpoint_folder = '../checkpoints_{}'.format(checkpoint)
     data = utils.EvalLoader(os.path.join(flags.data_folder,dataset),flags.nevts)
     inputs,outputs = ABCNet(npoint=NPART,nfeat=dataset_config['SHAPE'][2])
     model = Model(inputs=inputs,outputs=outputs)
     model.load_weights('{}/{}'.format(checkpoint_folder,'checkpoint'))
-
-
-    abcnet_weights = model.predict(utils.ApplyPrep(preprocessing,data['pu_part'][:,:NPART]),batch_size=10)
-    abcnet_weights[abcnet_weights<1e-3]=0
+    abcnet_weights = model.predict(utils.ApplyPrep(preprocessing,data['pu_part'][:,:NPART]),batch_size=5)
+    print(abcnet_weights)
+    #abcnet_weights[abcnet_weights<1e-3]=0
 
     #abcnet_weights = model.predict(data['pu_part'][:,:NPART],batch_size=10)
-    puppi_weights = data['pu_part'][:,:NPART,-3]
+    puppi_weights = data['pu_part'][:,:NPART,-4]
+    chs_weights = data['pu_part'][:,:NPART,-1]
+    chs_weights[data['pu_part'][:,:NPART,-2]==0]=1
+
+    Plot2D(np.squeeze(abcnet_weights),data['pu_part'],data['nopu_part'],checkpoint,name='ABCNet_{}'.format(dataset))
+    Plot2D(puppi_weights,data['pu_part'],data['nopu_part'],checkpoint,name='PUPPI_{}'.format(dataset))
+    # SaveH5(np.squeeze(abcnet_weights)[:10],data['pu_part'][:10],data['nopu_part'][:10])
     def _convert_kinematics(data,is_gen=False):
         four_vec = data[:,:,:3]
-        #eta,phi,pT,E
-        #pt and energy conversion from log transformation
-        # if not is_gen:
-        #     four_vec[:,:,2][four_vec[:,:,2]!=0] = 10**(four_vec[:,:,2][four_vec[:,:,2]!=0])
-        #     four_vec[:,:,3][four_vec[:,:,3]!=0] = 10**(four_vec[:,:,3][four_vec[:,:,3]!=0])
             
+        #eta,phi,pT,E
         #convert to cartesian coordinates (px,py,pz,E)
         cartesian = np.zeros(four_vec.shape,dtype=np.float32)
         cartesian[:,:,0] += np.abs(four_vec[:,:,2])*np.cos(four_vec[:,:,1])
@@ -70,27 +154,17 @@ if __name__ == '__main__':
         # cartesian[:,:,3] = four_vec[:,:,3]
         #print(cartesian)
         return cartesian
-
+    
     nopu_set = _convert_kinematics(data['nopu_part'])
     gen_set =  _convert_kinematics(data['gen_part'],is_gen=True)
     abc_set = _convert_kinematics(data['pu_part'][:,:NPART])*(abcnet_weights)
     puppi_set = _convert_kinematics(data['pu_part'][:,:NPART])*np.expand_dims(puppi_weights,-1)
 
-    print(abc_set.dtype)
+
     del data['nopu_part'], data['pu_part']
-    # abc_set = _convert_kinematics(data['pu_part'][:,:,:4]*abcnet_weights)
-
-
-
-    # pu_mask = np.sum(pu_set[:,:,2]!=0,1)<NPART #avoid events that are truncated
-    # puppi_set = puppi_set[pu_mask]
-    # abc_set = abc_set[pu_mask]
-    # nopu_set=nopu_set[pu_mask]
-    # gen_set = gen_set[pu_mask]
     
-
     dict_dataset = {}
-    
+    dict_dataset['NPV'] = data['high_level'][:,-1]
     dict_dataset['MET_gen'] = GetMET(gen_set)
     dict_dataset['MET_nopu'] = GetMET(nopu_set)
     dict_dataset['MET_puppi'] = GetMET(puppi_set)
@@ -105,7 +179,7 @@ if __name__ == '__main__':
             
         array = ak.Array(events)
         cluster = fastjet.ClusterSequence(array, jetdef)
-        jets = cluster.inclusive_jets(min_pt=10)
+        jets = cluster.inclusive_jets(min_pt=15)
         jets["pt"] = np.sqrt(jets["px"]**2 + jets["py"]**2)
         jets["phi"] = np.arctan2(jets["py"],jets["px"])
         jets["eta"] = np.arcsinh(jets["pz"]/jets["pt"])
@@ -126,9 +200,9 @@ if __name__ == '__main__':
     
     for dset in sets:
         print(dset)
-        dict_dataset[dset] = _dict_data(sets[dset],njets=10)
+        dict_dataset[dset] = _dict_data(sets[dset],njets=9)
         
-    with h5.File(os.path.join(flags.data_folder,"JetInfo_{}_{}".format(dataset_config['CHECKPOINT_NAME'],dataset)),"w") as h5f:
+    with h5.File(os.path.join(flags.data_folder,"JetInfo_{}_{}".format(checkpoint,dataset)),"w") as h5f:
         for key in dict_dataset:
             dset = h5f.create_dataset(key, data=dict_dataset[key])
             

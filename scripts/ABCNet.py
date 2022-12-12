@@ -4,6 +4,28 @@ import numpy as np
 import tensorflow.keras.backend as K
 
 
+import tensorflow as tf
+from tensorflow.keras import layers, Input
+import numpy as np
+import tensorflow.keras.backend as K
+
+
+
+
+class MyHeavisideActivation(tf.keras.layers.Layer):
+  def __init__(self, num_outputs, threshold=.5, **kwargs):
+    super(MyHeavisideActivation, self).__init__(**kwargs)
+    self.num_outputs = num_outputs
+    self.threshold = threshold
+
+  def build(self, input_shape):
+    pass
+
+  def call(self, inputs):
+    return tf.cond(inputs > self.threshold, 
+                   lambda: tf.add(tf.multiply(inputs,0), 1), # set to 1
+                   lambda: tf.multiply(inputs, 0))           # set to 0
+
 
 def pairwise_distanceR(point_cloud, mask):
     """Compute pairwise distance in the eta-phi plane for the point cloud.
@@ -163,7 +185,6 @@ class AttnFeat(layers.Layer):
         if 'deltaR' in kwargs:
             deltaR = kwargs['deltaR']
             edge_feature_pre = tf.concat([edge_feature_pre,tf.expand_dims(deltaR,-1)],-1)
-            #edge_feature_pre = tf.concat([edge_feature_pre,tf.math.divide_no_nan(neighbors[:,:,2:3],tf.expand_dims(deltaR,-1))],-1)
 
         #Encode the points in cloud by a 1 CNN layer, the weights are learnable parameters of this filter
         new_feature = self.Conv2DNoBias(inputs)
@@ -239,15 +260,14 @@ def ABCNet(npoint,nfeat=1,momentum=0.99):
     mask = tf.where(inputs[:,:,2]==0,K.ones_like(inputs[:,:,2]),K.zeros_like(inputs[:,:,2]))
     idx_list = list(range(nfeat))
     idx_list.pop(1)
-    idx_list.pop(-1) #skip CHS-like flag
+    idx_list.pop(-1)
     adj_1, zero_matrix = pairwise_distanceR(inputs[:,:,:3], mask)
-    nn_idx,deltaR = knn(adj_1, k=k)
+    nn_idx,dist = knn(adj_1, k=k)
 
-    neighbors_features_1, graph_features_1, attention_features_1 = GAPBlock(k=k, filters_C2DNB=16, padding_C2DNB = 'valid', name='Gap1')((nn_idx, tf.gather(inputs,idx_list,axis=-1),mask),deltaR=deltaR)
+    neighbors_features_1, graph_features_1, attention_features_1 = GAPBlock(k=k, filters_C2DNB=16, padding_C2DNB = 'valid', name='Gap1')((nn_idx, tf.gather(inputs,idx_list,axis=-1),mask),deltaR=dist)
     x = layers.Conv1D(filters = 64, kernel_size = 1, strides = 1, padding='valid', kernel_initializer='glorot_uniform', activation='relu')(neighbors_features_1)
     x = layers.Conv1D(filters = 64, kernel_size = 1, strides = 1, padding='valid', kernel_initializer='glorot_uniform', activation='relu')(x)
     x = layers.BatchNormalization(momentum=momentum)(x)
-    # x = layers.LayerNormalization(epsilon=1e-6)(x)
     x01=x
     
     # adj_2 = pairwise_distance(x, zero_matrix)
@@ -258,15 +278,13 @@ def ABCNet(npoint,nfeat=1,momentum=0.99):
     #x = layers.BatchNormalization(momentum=momentum)(x)
     x = layers.Conv1D(filters = 128, kernel_size = 1, strides = 1, padding='valid', kernel_initializer='glorot_uniform', activation='relu')(x)
     x = layers.BatchNormalization(momentum=momentum)(x)
-    # x = layers.LayerNormalization(epsilon=1e-6)(x)
     x11 = x
     
     #perform aggregation. Aggregation is a concat tf.operation
     x = tf.concat([x01, x11, graph_features_1, graph_features_2], axis = -1)
 
-    x = layers.Conv1D(filters = 256, kernel_size = 1, strides = 1, padding='valid', kernel_initializer='glorot_uniform', activation='relu')(x)
+    x = layers.Conv1D(filters = 256, kernel_size = 1, strides = 1, padding='valid', kernel_initializer='glorot_uniform', activation='relu')(x)        
     x = layers.BatchNormalization(momentum=momentum)(x)
-    # x = layers.LayerNormalization(epsilon=1e-6)(x)
 
     x_prime = x
     
@@ -286,10 +304,15 @@ def ABCNet(npoint,nfeat=1,momentum=0.99):
     return inputs,outputs
 
 
-
 def SWD(y_true, y_pred,nprojections=128):
     pu_pfs = y_true[:,:,:y_true.shape[2]//2]
     nopu_pfs = y_true[:,:,y_true.shape[2]//2:]
+
+    charge_pu_mask = tf.cast(tf.expand_dims(tf.abs(pu_pfs[:,:,-1])>0,-1),tf.float32)
+    charge_nopu_mask = tf.cast(tf.expand_dims(tf.abs(nopu_pfs[:,:,-1])>0,-1),tf.float32)    
+    nopu_pfs = nopu_pfs[:,:,:4]
+    pu_pfs = pu_pfs[:,:,:4]*y_pred
+
 
 
     def _getSWD(pu_pf,nopu_pf):    
@@ -320,14 +343,22 @@ def SWD(y_true, y_pred,nprojections=128):
     # nopu_pfs = tf.expand_dims(nopu_pfs[:,:,3],-1)
     # pu_pfs = tf.expand_dims(pu_pfs[:,:,3],-1)*y_pred
     
-    nopu_pfs = nopu_pfs
-    pu_pfs = pu_pfs*y_pred
+    # nopu_pfs = nopu_pfs
+    # pu_pfs = pu_pfs*y_pred
 
 
+#     wdist = _getSWD(pu_pfs,nopu_pfs)
+#     notzero = tf.reduce_sum(tf.where(wdist>0,tf.ones_like(wdist),tf.zeros_like(wdist)))    
+#     return 1e3*tf.reduce_sum(wdist)/tf.reduce_sum(notzero)
+# # #+tf.reduce_mean(met_mse)
+
+    wdist_charge = _getSWD(pu_pfs*charge_pu_mask,nopu_pfs*charge_nopu_mask)
+    wdist_neutral = _getSWD(pu_pfs*tf.cast(charge_pu_mask==0,tf.float32),
+                            nopu_pfs*tf.cast(charge_nopu_mask==0,tf.float32))
     wdist = _getSWD(pu_pfs,nopu_pfs)
-    notzero = tf.reduce_sum(tf.where(wdist>0,tf.ones_like(wdist),tf.zeros_like(wdist)))    
-    return 1e3*tf.reduce_sum(wdist)/tf.reduce_sum(notzero)
-#+tf.reduce_mean(met_mse)
+
+
+    return 1e3*tf.reduce_mean(wdist_neutral) + 1e3*tf.reduce_mean(wdist_charge) + 1e3*tf.reduce_mean(wdist)
 
     
 def sort_rows(matrix, num_rows):
