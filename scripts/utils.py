@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import matplotlib.ticker as mtick
 
+
 def split_data(data,nevts,frac=0.8):
     data = data.cache().shuffle(nevts)
     train_data = data.take(int(frac*nevts)).repeat()
@@ -15,25 +16,27 @@ def split_data(data,nevts,frac=0.8):
     return train_data,test_data
 
 line_style = {
-    'nopu_jet':'dotted',
-    'abc_jet': "-",
-    'puppi_jet': "-",
-    'gen_jet':'dotted',    
+    'nopu':'dotted',
+    'abc': "-",
+    'puppi': "-",
+    'gen':'dotted',
+    
 }
 
 colors = {
-    'nopu_jet':'black',
-    'abc_jet': '#7570b3',
-    'puppi_jet': "#d95f02",
-    'gen_jet':'#1b9e77',    
+    'nopu':'black',
+    'abc': '#7570b3',
+    'puppi': "#d95f02",
+    'gen':'#1b9e77',    
 }
 
 
 name_translate={
-    'nopu_jet':"0 PU",
-    'abc_jet': "ABCNet",
-    'puppi_jet': "PUPPI",
-    'gen_jet':"Gen",
+    'nopu':"0 PU",
+    'abc': "TOTAL",
+    'puppi': "PUPPI",
+    'gen':"Gen",
+
 }
 
 
@@ -71,8 +74,10 @@ def SetStyle():
     hep.set_style(hep.style.CMS)
     hep.style.use("CMS") 
 
-def SetGrid(ratio=True):
-    fig = plt.figure(figsize=(9, 9))
+def SetGrid(ratio=True,figsize=None):
+    if figsize is None:
+        figsize=(9,9)
+    fig = plt.figure(figsize=figsize)
     if ratio:
         gs = gridspec.GridSpec(2, 1, height_ratios=[3,1]) 
         gs.update(wspace=0.025, hspace=0.1)
@@ -82,25 +87,32 @@ def SetGrid(ratio=True):
 
 
 
-def PlotRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu_jet',plot_ratio=False,xaxis=None):
+def PlotRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu',plot_ratio=False,xaxis=None,yerror=None):
     assert reference_name in feed_dict.keys(), "ERROR: Don't know the reference distribution"
     
     fig,gs = SetGrid(ratio=plot_ratio) 
     ax0 = plt.subplot(gs[0])
+    ax0.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2f'))
     
     if plot_ratio:
         plt.xticks(fontsize=0)
         ax1 = plt.subplot(gs[1],sharex=ax0)
 
-    for ip,plot in enumerate(feed_dict.keys()):
-        if xaxis is None:
-            ax0.plot(feed_dict[plot],label=name_translate[plot],marker=line_style[plot],color=colors[plot])
+    for ip,plot in enumerate(feed_dict.keys()):        
+        if yerror is None:
+            yerr = None
         else:
-            ax0.plot(xaxis,feed_dict[plot],label=name_translate[plot],marker='o',color=colors[plot])
+            yerr = yerror[plot]
+            
+        if xaxis is None:
+            ax0.errorbar(feed_dict[plot],yerr=yerr,label=name_translate[plot],marker=line_style[plot],color=colors[plot])
+        else:
+            ax0.errorbar(xaxis,feed_dict[plot],yerr=yerr,label=name_translate[plot],marker='o',color=colors[plot])
 
         if reference_name!=plot and plot_ratio:
-            ratio = 100*np.divide(feed_dict[reference_name]-feed_dict[plot],feed_dict[reference_name])
-            ax1.plot(ratio,color=colors[plot],marker='o',ms=10,lw=0,markerfacecolor='none',markeredgewidth=3)
+            if 'nopu' in plot:continue
+            ratio = 100*np.divide(-feed_dict[reference_name]+feed_dict[plot],feed_dict[reference_name])
+            ax1.plot(xaxis,ratio,color=colors[plot],marker='o',ms=10,lw=0,markerfacecolor='none',markeredgewidth=3)
             
     ax0.legend(loc='best',fontsize=16,ncol=1)
     if plot_ratio:
@@ -139,8 +151,8 @@ def WriteText(xpos,ypos,text,ax0):
              transform = ax0.transAxes, fontsize=25, fontweight='bold')
 
 
-def HistRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu_jet',logy=False,binning=None,label_loc='best',plot_ratio=True,weights=None,uncertainty=None):
-    assert reference_name in feed_dict.keys(), "ERROR: Don't know the reference distribution"
+def HistRoutine(feed_dict,xlabel='',ylabel='',reference_name='gen',logy=False,binning=None,label_loc='best',plot_ratio=True,weights=None,uncertainty=None,label_names=None):
+    #assert reference_name in feed_dict.keys() and plot_ratio==True, "ERROR: Don't know the reference distribution"
     
     fig,gs = SetGrid(ratio=plot_ratio) 
     ax0 = plt.subplot(gs[0])
@@ -148,18 +160,22 @@ def HistRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu_jet',logy=Fal
         plt.xticks(fontsize=0)
         ax1 = plt.subplot(gs[1],sharex=ax0)
 
+    if label_names is None:
+        label_names=name_translate
+        
     
     if binning is None:
         binning = np.linspace(np.quantile(feed_dict[reference_name],0.0),np.quantile(feed_dict[reference_name],1),10)
         
     xaxis = [(binning[i] + binning[i+1])/2.0 for i in range(len(binning)-1)]
-    reference_hist,_ = np.histogram(feed_dict[reference_name],bins=binning,density=True)
+    if plot_ratio:
+        reference_hist,_ = np.histogram(feed_dict[reference_name],bins=binning,density=True)
     
     for ip,plot in enumerate(feed_dict.keys()):
         if weights is not None:
-            dist,_,_=ax0.hist(feed_dict[plot],bins=binning,label=name_translate[plot],linestyle=line_style[plot],color=colors[plot],density=True,histtype="step",weights=weights[plot])
+            dist,_,_=ax0.hist(feed_dict[plot],bins=binning,label=label_names[plot],linestyle=line_style[plot],color=colors[plot],density=True,histtype="step",weights=weights[plot])
         else:
-            dist,_,_=ax0.hist(feed_dict[plot],bins=binning,label=name_translate[plot],linestyle=line_style[plot],color=colors[plot],density=True,histtype="step")
+            dist,_,_=ax0.hist(feed_dict[plot],bins=binning,label=label_names[plot],linestyle=line_style[plot],color=colors[plot],density=True,histtype="step")
         
         if plot_ratio:
             if reference_name!=plot:
@@ -194,8 +210,7 @@ def DataLoader(file_name,nevts):
     size = hvd.size()
     with h5.File(file_name,"r") as h5f:
         pu = h5f['pu_part'][rank:int(nevts):size].astype(np.float32)
-        nopu = h5f['nopu_part'][rank:int(nevts):size].astype(np.float32)
-        
+        nopu = h5f['nopu_part'][rank:int(nevts):size].astype(np.float32)          
     return pu,nopu
 
 def EvalLoader(file_name,nevts):
@@ -206,13 +221,20 @@ def EvalLoader(file_name,nevts):
             data_dict[key] = h5f[key][:nevts].astype(np.float32)
     return data_dict
 
-def ApplyPrep(param_dict,data):
+def ApplyPrep(param_dict,data,use_log=False):
     shape = data.shape
-    data_flat = data.reshape((-1,shape[-1]))
+    data_flat = data.copy().reshape((-1,shape[-1]))
+    if use_log:
+        data_flat[:,2]=np.ma.log(data_flat[:,2]).filled(0)
+        data_flat[:,3]=np.ma.log(data_flat[:,3]).filled(0)
+        data_flat[:,4]=np.ma.log(data_flat[:,4]).filled(0)
+        data_flat[:,5]=np.ma.log(data_flat[:,5]).filled(0)
+        
     #keep zeros
     mask = data_flat!=0
-    data_flat = (data_flat-param_dict['mean'])/param_dict['std']
+    data_flat = (data_flat-param_dict['mean'][:shape[-1]])/param_dict['std'][:shape[-1]]
     data_flat*=mask
+    
     return data_flat.reshape(shape)
 
 def LoadJson(file_name):
@@ -228,9 +250,10 @@ def Preprocess(name,raw_data):
     '''Preprocess the data'''
 
     if 'PID' in name:
-        unique_pid = [-2212,-321,-211,-13,-11,11,13,22,211,321,2212]
+        unique_pid = [0,11,13,22,211,321,2212]
+        #unique_pid = [-2212,-321,-211,-13,-11,11,13,22,211,321,2212]
         for i, unique in enumerate(unique_pid):
-            raw_data[raw_data==unique] = i+1
+            raw_data[np.abs(raw_data)==unique] = i+1
         return raw_data/len(unique_pid)
     else:    
         return np.array(raw_data)
@@ -257,25 +280,33 @@ def Preprocess(name,raw_data):
 if __name__ == "__main__":
     #Preprocessing of the input files: conversion to cartesian coordinates + zero-padded mask generation
     import uproot3 as uproot
-    hvd.init()
-    sample_name = 'DiJet'
-    features = ['Eta','Phi','PT','E','Eem','Ehad','D0','DZ','PuppiW','PID','Charge']
+    # hvd.init()
+    #sample_name = 'DiJet'
+    # sample_name = 'TTBar'
+    #sample_name = 'WJets_HighPT'
+    sample_name = 'ZJets'
+    # sample_name = 'VBFHinv'
+    features = ['Eta','Phi','PT','E','D0','DZ','PuppiW','PID','Charge','hardfrac']
     pu_features = ["pu_pfs_{}".format(feat) for feat in features]
     nopu_features = ["nopu_pfs_{}".format(feat) for feat in features]
     genpart_branches = ['Eta','Phi','PT','E','Charge','PID']
     gen_info = ["nopu_gen_{}".format(gen) for gen in genpart_branches]
-    high_level = ['nopu_genmet_MET','nopu_genmet_Phi']
+    high_level = ['nopu_genmet_MET','nopu_genmet_Phi','pu_npv_GenVertex_size']
     
     base_path = '/global/cfs/cdirs/m3929/PU/'
-    out_path = '/pscratch/sd/v/vmikuni/PU/'
-    file_list = ['{}_outfile_{}.root'.format(sample_name,i) for i in range(1,10)]
+    #base_path = '/pscratch/sd/v/vmikuni/PU/vertex_info'
+    # out_path = '/pscratch/sd/v/vmikuni/PU/'
+    #out_path = '/global/cscratch1/sd/vmikuni/PU'
+    out_path = '/pscratch/sd/v/vmikuni/PU/vertex_info'
+    file_list = ['{}_outfile_{}.root'.format(sample_name,i) for i in range(25,40)]
     merged_file = {}
-
+    
     print("merging files")
     for sample in file_list:
         file_path = os.path.join(base_path,sample)
         temp_file = uproot.open(file_path)['events']
-        
+        # print(temp_file.keys())
+        # input()
         for feat in gen_info + nopu_features + pu_features + high_level:
             if feat in merged_file:
                 merged_file[feat] = np.concatenate([merged_file[feat],temp_file[feat].array()],0)
@@ -283,7 +314,6 @@ if __name__ == "__main__":
                 merged_file[feat] = temp_file[feat].array()
     del temp_file
     print("Preprocessing")
-
     def _merger(features,ndim=2):
         array=[]
         for feat in features:
@@ -298,6 +328,10 @@ if __name__ == "__main__":
     
     high_array = _merger(high_level)
     gen_array = _merger(gen_info,ndim=3)
+    neutrino_id = [12,14,16]
+    mask = (np.abs(gen_array[:,:,-1]) == neutrino_id[0]) | (np.abs(gen_array[:,:,-1]) == neutrino_id[1]) | (np.abs(gen_array[:,:,-1]) == neutrino_id[2])
+
+    gen_array[mask]=0
     #print(gen_array[0,0],gen_array.shape)
     
     #Standardize training data prior to training
@@ -308,20 +342,18 @@ if __name__ == "__main__":
         #print(feat,np.min(merged_file[feat]),np.max(merged_file[feat]))
 
     nopu_array = _merger(nopu_features,ndim=3)
+    nopu_array[(nopu_array[:,:,-3]==1.0/7)&(nopu_array[:,:,0]==0.0)]=0
     # print(nopu_array[0,0],nopu_array.shape)
     pu_array = _merger(pu_features,ndim=3)
+    pu_array[(pu_array[:,:,-3]==1.0/7)&(pu_array[:,:,0]==0.0)]=0
 
-    #Basic selection to reject protons and very forward particles
+    #Apply CHS Only to charged particles
+    pu_array[:,:,-1]*=np.abs(pu_array[:,:,-2])
+    nopu_array[:,:,-1]*=np.abs(nopu_array[:,:,-2])
     
-    #mask = np.abs(nopu_array[:,:,0])>4.5
-    
-
     with h5.File(os.path.join(out_path,'{}_raw.h5'.format(sample_name)),'w') as fh5:
         dset = fh5.create_dataset('high_level', data=high_array)
         dset = fh5.create_dataset('gen_part', data=gen_array)
         dset = fh5.create_dataset('pu_part', data=pu_array)
         dset = fh5.create_dataset('nopu_part', data=nopu_array)
                 
-    
-
-        

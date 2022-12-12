@@ -8,5 +8,5 @@
     'NSWD':9,
     'NPART':9000,
     'PREPFILE':'preprocessing_raw.json',
-    'CHECKPOINT_NAME':'SWDPU_NSWD4_EMD_smooth2'
+    'CHECKPOINT_NAME':'SWDPU_NSWD4_EMD'
 }
