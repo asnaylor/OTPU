@@ -3,6 +3,7 @@ import os,copy
 import h5py as h5
 import horovod.tensorflow.keras as hvd
 import numpy as np
+import argparse
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -17,6 +18,7 @@ def split_data(data,nevts,frac=0.8):
 
 line_style = {
     'nopu':'dotted',
+    'truth':'dotted',
     'abc': "-",
     'puppi': "-",
     'gen':'dotted',
@@ -25,6 +27,7 @@ line_style = {
 
 colors = {
     'nopu':'black',
+    'truth':'black',
     'abc': '#7570b3',
     'puppi': "#d95f02",
     'gen':'#1b9e77',    
@@ -33,6 +36,7 @@ colors = {
 
 name_translate={
     'nopu':"0 PU",
+    'truth':"0 PU",
     'abc': "TOTAL",
     'puppi': "PUPPI",
     'gen':"Gen",
@@ -87,12 +91,12 @@ def SetGrid(ratio=True,figsize=None):
 
 
 
-def PlotRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu',plot_ratio=False,xaxis=None,yerror=None):
+def PlotRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu',plot_ratio=False,xaxis=None,yerror=None,figsize=None):
     assert reference_name in feed_dict.keys(), "ERROR: Don't know the reference distribution"
     
-    fig,gs = SetGrid(ratio=plot_ratio) 
+    fig,gs = SetGrid(ratio=plot_ratio,figsize=figsize) 
     ax0 = plt.subplot(gs[0])
-    ax0.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2f'))
+    ax0.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.3f'))
     
     if plot_ratio:
         plt.xticks(fontsize=0)
@@ -110,10 +114,11 @@ def PlotRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu',plot_ratio=F
             ax0.errorbar(xaxis,feed_dict[plot],yerr=yerr,label=name_translate[plot],marker='o',color=colors[plot])
 
         if reference_name!=plot and plot_ratio:
-            if 'nopu' in plot:continue
+            if 'nopu' in plot or 'truth' in plot:continue
             ratio = 100*np.divide(-feed_dict[reference_name]+feed_dict[plot],feed_dict[reference_name])
             ax1.plot(xaxis,ratio,color=colors[plot],marker='o',ms=10,lw=0,markerfacecolor='none',markeredgewidth=3)
-            
+
+    #plt.axvline(x=140,color='r', linestyle='-',linewidth=1)
     ax0.legend(loc='best',fontsize=16,ncol=1)
     if plot_ratio:
         FormatFig(xlabel = "", ylabel = ylabel,ax0=ax0)
@@ -280,12 +285,26 @@ def Preprocess(name,raw_data):
 if __name__ == "__main__":
     #Preprocessing of the input files: conversion to cartesian coordinates + zero-padded mask generation
     import uproot3 as uproot
-    # hvd.init()
+    parser = argparse.ArgumentParser()
+        
+    parser.add_argument('--sample', default='ZJets', help='Physics sample to load')
+    parser.add_argument('--base_path', default='/global/cfs/cdirs/m3929/PU/', help='Path to load files')
+    parser.add_argument('--out_path', default='/pscratch/sd/v/vmikuni/PU/vertex_info', help='Path to load files')
+    flags = parser.parse_args()
+    
     #sample_name = 'DiJet'
     # sample_name = 'TTBar'
     #sample_name = 'WJets_HighPT'
-    sample_name = 'ZJets'
+    # sample_name = 'ZJets'
     # sample_name = 'VBFHinv'
+
+    # base_path = '/global/cfs/cdirs/m3929/PU/'
+    # base_path = '/pscratch/sd/v/vmikuni/PU/vertex_info'
+    # out_path = '/pscratch/sd/v/vmikuni/PU/'
+    # out_path = '/global/cscratch1/sd/vmikuni/PU'
+    # out_path = '/pscratch/sd/v/vmikuni/PU/vertex_info'
+
+    
     features = ['Eta','Phi','PT','E','D0','DZ','PuppiW','PID','Charge','hardfrac']
     pu_features = ["pu_pfs_{}".format(feat) for feat in features]
     nopu_features = ["nopu_pfs_{}".format(feat) for feat in features]
@@ -293,20 +312,14 @@ if __name__ == "__main__":
     gen_info = ["nopu_gen_{}".format(gen) for gen in genpart_branches]
     high_level = ['nopu_genmet_MET','nopu_genmet_Phi','pu_npv_GenVertex_size']
     
-    base_path = '/global/cfs/cdirs/m3929/PU/'
-    #base_path = '/pscratch/sd/v/vmikuni/PU/vertex_info'
-    # out_path = '/pscratch/sd/v/vmikuni/PU/'
-    #out_path = '/global/cscratch1/sd/vmikuni/PU'
-    out_path = '/pscratch/sd/v/vmikuni/PU/vertex_info'
-    file_list = ['{}_outfile_{}.root'.format(sample_name,i) for i in range(25,40)]
+    file_list = ['{}_outfile_{}.root'.format(flags.sample,i) for i in range(25,26)]
+    
     merged_file = {}
     
     print("merging files")
     for sample in file_list:
-        file_path = os.path.join(base_path,sample)
+        file_path = os.path.join(flags.base_path,sample)
         temp_file = uproot.open(file_path)['events']
-        # print(temp_file.keys())
-        # input()
         for feat in gen_info + nopu_features + pu_features + high_level:
             if feat in merged_file:
                 merged_file[feat] = np.concatenate([merged_file[feat],temp_file[feat].array()],0)
@@ -331,27 +344,26 @@ if __name__ == "__main__":
     neutrino_id = [12,14,16]
     mask = (np.abs(gen_array[:,:,-1]) == neutrino_id[0]) | (np.abs(gen_array[:,:,-1]) == neutrino_id[1]) | (np.abs(gen_array[:,:,-1]) == neutrino_id[2])
 
+    #Mask neutrinos out from gen particles
     gen_array[mask]=0
-    #print(gen_array[0,0],gen_array.shape)
-    
-    #Standardize training data prior to training
-    for feat in nopu_features + pu_features:
-        #print(feat)
-        merged_file[feat] = Preprocess(feat,merged_file[feat])
-        
-        #print(feat,np.min(merged_file[feat]),np.max(merged_file[feat]))
 
+    
+    #Preprocess training data prior to training
+    for feat in nopu_features + pu_features:
+        merged_file[feat] = Preprocess(feat,merged_file[feat])
+
+    #Fix the PID for 0-padded particles
     nopu_array = _merger(nopu_features,ndim=3)
     nopu_array[(nopu_array[:,:,-3]==1.0/7)&(nopu_array[:,:,0]==0.0)]=0
-    # print(nopu_array[0,0],nopu_array.shape)
     pu_array = _merger(pu_features,ndim=3)
     pu_array[(pu_array[:,:,-3]==1.0/7)&(pu_array[:,:,0]==0.0)]=0
 
-    #Apply CHS Only to charged particles
-    pu_array[:,:,-1]*=np.abs(pu_array[:,:,-2])
-    nopu_array[:,:,-1]*=np.abs(nopu_array[:,:,-2])
     
-    with h5.File(os.path.join(out_path,'{}_raw.h5'.format(sample_name)),'w') as fh5:
+    #Apply CHS Only to charged particles
+    # pu_array[:,:,-1]*=np.abs(pu_array[:,:,-2])
+    # nopu_array[:,:,-1]*=np.abs(nopu_array[:,:,-2])
+    
+    with h5.File(os.path.join(flags.out_path,'{}_raw.h5'.format(flags.sample)),'w') as fh5:
         dset = fh5.create_dataset('high_level', data=high_array)
         dset = fh5.create_dataset('gen_part', data=gen_array)
         dset = fh5.create_dataset('pu_part', data=pu_array)

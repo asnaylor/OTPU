@@ -21,6 +21,16 @@ def SaveH5(weights,pu_part,nopu_part):
         
     input("Saved")
 
+def get_thrust(jets,parts):
+    
+    part_pt = np.sqrt(parts["px"]**2 + parts["py"]**2)
+    part_phi = np.arctan2(parts["py"],parts["px"])
+    part_eta = np.arcsinh(parts["pz"]/part_pt)
+    z = part_pt/jets['pt']
+    dr = (part_eta-jets['eta'])**2 + (part_phi-jets['phi'])**2
+    thrust = np.sum(dr*z,-1)
+    return thrust
+
 def Plot2D(weights,pu,gen,checkpoint,name=''):
     utils.SetStyle()
     eta_binning = np.linspace(-4,4,25)
@@ -99,9 +109,9 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
         
-    parser.add_argument('--data_folder', default='/pscratch/sd/v/vmikuni/PU/vertex_info', help='Folder containing data and MC files')
+    #parser.add_argument('--data_folder', default='/pscratch/sd/v/vmikuni/PU/vertex_info', help='Folder containing data and MC files')
     #parser.add_argument('--data_folder', default='/global/cscratch1/sd/vmikuni/PU/vertex_info', help='Folder containing data and MC files')
-    #parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/SCRATCH/PU/PU/vertex_info', help='Folder containing data and MC files')
+    parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/SCRATCH/PU/PU/vertex_info', help='Folder containing data and MC files')
     parser.add_argument('--dataset', default=None, help='dataset to load')
     parser.add_argument('--model', default=None, help='model checkpoint to load')
     parser.add_argument('--nevts', type=int,default=-1, help='Number of events to load')
@@ -131,7 +141,7 @@ if __name__ == '__main__':
     model = Model(inputs=inputs,outputs=outputs)
     model.load_weights('{}/{}'.format(checkpoint_folder,'checkpoint'))
     abcnet_weights = model.predict(utils.ApplyPrep(preprocessing,data['pu_part'][:,:NPART]),batch_size=5)
-    print(abcnet_weights)
+
     #abcnet_weights[abcnet_weights<1e-3]=0
 
     #abcnet_weights = model.predict(data['pu_part'][:,:NPART],batch_size=10)
@@ -180,9 +190,13 @@ if __name__ == '__main__':
         array = ak.Array(events)
         cluster = fastjet.ClusterSequence(array, jetdef)
         jets = cluster.inclusive_jets(min_pt=15)
+        part = cluster.constituents(min_pt=15)
+
         jets["pt"] = np.sqrt(jets["px"]**2 + jets["py"]**2)
         jets["phi"] = np.arctan2(jets["py"],jets["px"])
         jets["eta"] = np.arcsinh(jets["pz"]/jets["pt"])
+        jets['thrust'] = get_thrust(jets,part)
+
         jets=fastjet.sorted_by_pt(jets) 
         return jets[:,::-1]
 
@@ -190,12 +204,13 @@ if __name__ == '__main__':
 
     def _dict_data(jets,njets):        
         cluster = _cluster(jets)
-        dataset = np.zeros((len(cluster.pt.to_list()),njets,4),dtype=np.float32)
+        dataset = np.zeros((len(cluster.pt.to_list()),njets,5),dtype=np.float32)
 
         dataset[:,:,0]+=np.array(list(itertools.zip_longest(*cluster.pt.to_list(), fillvalue=0))).T[:,:njets]
         dataset[:,:,1]+=np.array(list(itertools.zip_longest(*cluster.eta.to_list(), fillvalue=0))).T[:,:njets]
         dataset[:,:,2]+=np.array(list(itertools.zip_longest(*cluster.phi.to_list(), fillvalue=0))).T[:,:njets]
         dataset[:,:,3]+=np.array(list(itertools.zip_longest(*cluster.E.to_list(), fillvalue=0))).T[:,:njets]
+        dataset[:,:,4]+=np.array(list(itertools.zip_longest(*cluster.thrust.to_list(), fillvalue=0))).T[:,:njets]
         return dataset
     
     for dset in sets:
