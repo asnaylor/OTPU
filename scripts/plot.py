@@ -86,12 +86,12 @@ def PlotResolution(data_dict,plot_folder,process,npv=None):
     eta_binning = np.linspace(0,4,5)
     eta_res = {}
     eta_err={}
-    thrust_binning = np.linspace(0,1,5)
-    thrust_res = {}
-    thrust_err={}
+    # thrust_binning = np.linspace(0,1,5)
+    # thrust_res = {}
+    # thrust_err={}
 
     
-    npv_binning = np.linspace(0,200,10)
+    npv_binning = np.linspace(0,200,1)
     npv_res = {}
     npv_err={}
     
@@ -115,8 +115,8 @@ def PlotResolution(data_dict,plot_folder,process,npv=None):
         pt_err[name]=np.zeros(pt_binning.shape[0]-1)
         eta_res[name]=np.zeros(eta_binning.shape[0]-1)
         eta_err[name]=np.zeros(eta_binning.shape[0]-1)
-        thrust_res[name]=np.zeros(eta_binning.shape[0]-1)
-        thrust_err[name]=np.zeros(eta_binning.shape[0]-1)
+        # thrust_res[name]=np.zeros(eta_binning.shape[0]-1)
+        # thrust_err[name]=np.zeros(eta_binning.shape[0]-1)
         npv_res[name]=np.zeros(npv_binning.shape[0]-1)
         npv_err[name]=np.zeros(npv_binning.shape[0]-1)
         
@@ -147,12 +147,12 @@ def PlotResolution(data_dict,plot_folder,process,npv=None):
             eta_res[name][i] = (quantiles[1]-quantiles[0])*0.5
             eta_err[name][i] = GetBootErr(np.nan_to_num(res[:,0][mask]),quantile_list)
 
-        for i in range(thrust_binning.shape[0]-1):
-            mask = (np.abs(res[:,3])>thrust_binning[i]) & (np.abs(res[:,3])<thrust_binning[i+1])
+        # for i in range(thrust_binning.shape[0]-1):
+        #     mask = (np.abs(res[:,3])>thrust_binning[i]) & (np.abs(res[:,3])<thrust_binning[i+1])
 
-            quantiles = np.quantile(res[:,0][mask],quantile_list)
-            thrust_res[name][i] = (quantiles[1]-quantiles[0])*0.5
-            thrust_err[name][i] = GetBootErr(np.nan_to_num(res[:,0][mask]),quantile_list)
+        #     quantiles = np.quantile(res[:,0][mask],quantile_list)
+        #     thrust_res[name][i] = (quantiles[1]-quantiles[0])*0.5
+        #     thrust_err[name][i] = GetBootErr(np.nan_to_num(res[:,0][mask]),quantile_list)
 
 
         for i in range(pt_binning.shape[0]-1):
@@ -304,7 +304,7 @@ if __name__ == '__main__':
     file_name = os.path.join(flags.data_folder,"JetInfo_{}_{}".format(checkpoint,sample))
 
     sets = ['nopu_jet','abc_jet','puppi_jet','gen_jet']
-    feed_dict = utils.loadSample(file_name,sets)
+    feed_dict = utils.loadSample(file_name,sets)    
     MET_set = ['MET_nopu','MET_abc','MET_puppi','MET_gen']
     feed_dict_met = utils.loadSample(file_name,MET_set)
     npv=utils.loadSample(file_name,['NPV'])
@@ -323,10 +323,10 @@ if __name__ == '__main__':
         print(plot)
         plot_routines[plot](feed_dict,plot_folder,sample.replace(".h5",""),npv=npv['NPV'])
 
-    met_routines = {
-        'MET hist':PlotMET,
-        }
+    # met_routines = {
+    #     'MET hist':PlotMET,
+    #     }
 
-    for plot in met_routines:
-        print(plot)
-        met_routines[plot](feed_dict_met,plot_folder,sample.replace(".h5",""))
+    # for plot in met_routines:
+    #     print(plot)
+    #     met_routines[plot](feed_dict_met,plot_folder,sample.replace(".h5",""))

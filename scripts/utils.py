@@ -123,7 +123,7 @@ def PlotRoutine(feed_dict,xlabel='',ylabel='',reference_name='nopu',plot_ratio=F
     if plot_ratio:
         FormatFig(xlabel = "", ylabel = ylabel,ax0=ax0)
 
-        plt.ylabel('Difference. (%)')
+        plt.ylabel('Difference (%)')
         plt.xlabel(xlabel)
         plt.axhline(y=0.0, color='r', linestyle='--',linewidth=1)
         plt.axhline(y=10, color='r', linestyle='--',linewidth=1)
