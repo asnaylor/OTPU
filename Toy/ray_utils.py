@@ -21,7 +21,7 @@ class start_ray_cluster:
     def _start_up(self):
         self._setup()
         self.ray = self._start_ray()
-        time.sleep(5)
+        time.sleep(10)
         self.prom = self._start_prom()
         self.gf = self._start_gf()
         print("<> Cluster completed startup")
@@ -35,7 +35,7 @@ class start_ray_cluster:
         return Popen(
             split(f'bash -c "module load {self.python_module};' \
                   f'export RAY_GRAFANA_IFRAME_HOST={self.gf_root_url};' \
-                  f'ray start --head --block"')
+                  f'ray start --head --block"') #f'export NCCL_DEBUG=INFO;' \
         )
         
     def _start_prom(self):
